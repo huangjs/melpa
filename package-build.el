@@ -481,12 +481,24 @@ of the same-named package which is to be kept."
   (pb/dump-archive-contents))
 
 (defun pb/read-recipes ()
-  "Return a list of data structures for all recipes in `package-build-recipes-dir'."
+  "Return a list of data structures for all recipes in
+`package-build-recipes-dir'."
   (mapcar 'pb/read-from-file
           (directory-files package-build-recipes-dir t "^[^.]")))
 
-;;; Public interface
+(defun pb/copy-file (src dst)
+  "Copy SRC to DST and create parent directories for DST if they
+don't exist."
+  (let ((dstdir (file-name-directory dst)))
+    (unless (file-exists-p dstdir)
+      (make-directory dstdir t)))
+  (cond
+   ((file-regular-p src)
+    (copy-file src dst))
+   ((file-directory-p src)
+    (copy-directory src dst))))
 
+;;; Public interface
 (defun package-build-archive (name)
   "Build a package archive for package FILE-NAME."
   (interactive (list (intern (completing-read "Package: "
@@ -496,7 +508,11 @@ of the same-named package which is to be kept."
                   (error "Cannot find package %s" file-name)))
          (pkg-cwd
           (file-name-as-directory
-           (expand-file-name file-name package-build-working-dir))))
+           (expand-file-name file-name package-build-working-dir)))
+         (pkg-basedir
+          (file-name-as-directory
+           (expand-file-name
+            (or (plist-get cfg :basedir) "") pkg-cwd))))
 
     (message (format "\n%s\n" file-name))
     (let* ((version (pb/checkout name cfg pkg-cwd))
@@ -536,7 +552,9 @@ of the same-named package which is to be kept."
           (when (file-exists-p pkg-dir)
             (delete-directory pkg-dir t nil))
 
-          (copy-directory file-name pkg-dir)
+          (mapc (lambda (fn) (pb/copy-file (expand-file-name fn pkg-basedir)
+                                      (expand-file-name fn pkg-dir)))
+                files)
 
           (pb/write-pkg-file (expand-file-name
                               pkg-file
